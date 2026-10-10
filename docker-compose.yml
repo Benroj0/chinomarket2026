@@ -1,0 +1,61 @@
+services:
+  # ── PostgreSQL para Chino Market ──────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: chinomarket_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chinomarket_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - chinomarket_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chinomarket_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ───────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+    container_name: chinomarket_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/chinomarket_db
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── SvelteKit Frontend ────────────────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    container_name: chinomarket_frontend
+    working_dir: /app
+    restart: unless-stopped
+    environment:
+      PUBLIC_API_BASE_URL: /api/v1
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: >
+      sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    depends_on:
+      - backend
+
+volumes:
+  chinomarket_postgres_data:
